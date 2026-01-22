@@ -1,0 +1,29 @@
+# build / compilation
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+Makefile
+*.o
+*.a
+*.so
+*.out
+*.exe
+
+# CUDA artifacts
+*.ptx
+*.cubin
+*.fatbin
+*.nvvp
+
+# logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
