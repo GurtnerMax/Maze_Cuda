@@ -168,6 +168,15 @@ __global__ void mazeInitLabelsFill(const unsigned char* __restrict__ maskGM,
     }
 }
 
+__device__  int stepCostV8(int k)
+{
+    // si 0 => diag
+    const int dx = d_dx8[k];
+    const int dy = d_dy8[k];
+    return ((dx != 0) & (dy != 0)) ? 3 : 2;  // droit=2, diag=3
+}
+
+
 __global__ void mazeSetSeeds(uint w, int2 start, int2 goal,
                              int* __restrict__ labelGM,
                              unsigned char* __restrict__ dirGM)
@@ -261,7 +270,8 @@ __global__ void mazePropagateV8(const unsigned char* __restrict__ maskGM,
                 if ((cur > 0 && v < 0) || (cur < 0 && v > 0))
                 {
                     const int absV = (v > 0) ? v : -v;
-                    const int sum  = absCur + absV - 1;
+                    const int edge = stepCostV8(k);
+                    const int sum  = absCur + absV - 2 + edge;
 
                     const int old = atomicMin(bestSum, sum);
                     if (sum < old)
@@ -287,47 +297,88 @@ __global__ void mazePropagateV8(const unsigned char* __restrict__ maskGM,
             continue;
         }
 
-        // cur INF : choose best neighbor (propagation)
-        int bestPos  = LABEL_INF;
-        int bestNeg  = -LABEL_INF;
+        // cchoisi meilleur voisin à prendre (chaque pixel a un poids, 3 diag, 2 droit)
+        int bestPosCand = LABEL_INF;     // store best positive for now
+        int bestNegCand = -LABEL_INF;    // store curr best negative
         int bestPosS = -1;
         int bestNegS = -1;
         int bestPosK = 255;
         int bestNegK = 255;
 
+        // but=> prendre celui qui a la valeur plus petite et lui rajouter un poids en fonction si diagonal ou droit
         #pragma unroll
         for (int k=0; k<8; k++)
         {
             const int ns = (i + d_dy8[k]) * W + (j + d_dx8[k]);
+            //v = current cost pf neighbourg
             const int v  = inLabel[ns];
+            if (v == LABEL_INF || v == 0) continue;
+
+            // ajoute une nouvelle valeur pour un voisin= new cost
+            const int c = stepCostV8(k);
 
             if (v > 0)
             {
-                if (v < bestPos)
+
+                const int cand = v + c;
+                if (cand < bestPosCand)
                 {
-                    bestPos  = v;
+                    bestPosCand = cand;
                     bestPosS = ns;
                     bestPosK = k;
                 }
+                else if (cand == bestPosCand)
+                    {
+                        // tie break : s best (3) si nouveau droit et ancien était diag
+                        if (stepCostV8(k) < stepCostV8(bestPosK))
+                        {
+                            bestPosS = ns;
+                            bestPosK = k;
+                        }
+                        else if (stepCostV8(k) == stepCostV8(bestPosK) && k < bestPosK)
+                        {
+                            bestPosS = ns;
+                            bestPosK = k;
+                        }
+                    }
             }
-            else if (v < 0)
+
+            else // v < 0
             {
-                if (v > bestNeg) // closer to 0
+                const int cand = v - c;
+                // on veut trouver proche de 0
+                if (cand > bestNegCand)
                 {
-                    bestNeg  = v;
+                    bestNegCand = cand;
                     bestNegS = ns;
                     bestNegK = k;
+                }
+                else if (cand == bestNegCand)
+                {
+                    // tie-break: prefer orth over diag
+                    if (stepCostV8(k) < stepCostV8(bestNegK))
+                    {
+                        bestNegS = ns;
+                        bestNegK = k;
+                    }
+                    else if (stepCostV8(k) == stepCostV8(bestNegK) && k < bestNegK)
+                    {
+                        bestNegS = ns;
+                        bestNegK = k;
+                    }
                 }
             }
         }
 
-        const int hasPos = (bestPos != LABEL_INF);
-        const int hasNeg = (bestNeg != -LABEL_INF);
+        const int hasPos = (bestPosCand != LABEL_INF);
+        const int hasNeg = (bestNegCand != -LABEL_INF);
 
-        // meet-cell contact (rare but OK)
+        // meet-cell contact
         if (hasPos & hasNeg)
         {
-            const int sum = bestPos + (-bestNeg);
+            // total cost = (posLabel-1) + (-(negLabel)-1)
+            const int sum = (bestPosCand - 1) + ((-bestNegCand) - 1);
+
             const int old = atomicMin(bestSum, sum);
             if (sum < old)
             {
@@ -337,16 +388,15 @@ __global__ void mazePropagateV8(const unsigned char* __restrict__ maskGM,
             }
         }
 
-        // propagate (branchless-ish)
-        const int nextPos = bestPos + 1;
-        const int nextNeg = bestNeg - 1;
-
-        outLabel[s] = hasPos ? nextPos : (hasNeg ? nextNeg : LABEL_INF);
+        // propagate
+        outLabel[s] = hasPos ? bestPosCand : (hasNeg ? bestNegCand : LABEL_INF);
         outDir[s]   = hasPos ? (unsigned char)bestPosK : (hasNeg ? (unsigned char)bestNegK : 255);
+
 
         s += NB;
     }
 }
+
 
 /*---------------- build path mask ----------------*/
 __global__ void mazeBuildPathMask(const unsigned char* __restrict__ dirGM,

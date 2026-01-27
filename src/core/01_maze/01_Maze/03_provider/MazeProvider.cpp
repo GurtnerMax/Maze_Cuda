@@ -20,7 +20,11 @@ Grid MazeProvider::grid()
 Animable_I<uchar4>* MazeProvider::createAnimable(const Grid& grid, bool isVerbose)
 {
     const std::string PATH = "/opt/cbi/data/image/maze/";
-    std::string name = "maze_special_2048.jpg";
+    std::string name = "maze_real_1024_1024.jpg";
+
+    //const std::string PATH = "/home/mse23/CUDA/toStudent/code/WCudaStudent/Maze_Cuda/";
+    //std::string name = "simple_maze.png";
+
     std::string fileName = PATH + name;
 
     Image image(fileName);
