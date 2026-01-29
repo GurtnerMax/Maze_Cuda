@@ -49,7 +49,7 @@ extern __global__ void mazeRenderLabelsHSB_PathAdaptive(const unsigned char* mas
                                                         const int* maxAbsGM,
                                                         uint w, uint h,
                                                         uchar4* dstGM);
-
+extern __global__ void mazeRenderMask(const unsigned char* maskGM, uint w, uint h, uchar4* dstGM);
 /*---------------- Otsu (host) ----------------*/
 static unsigned char otsuThreshold256(const int hist[256], int total)
 {
@@ -292,19 +292,16 @@ void Maze::process(uchar4* tabPixelsGM, uint w, uint h, const DomaineMath&)
     }
 
     // 4) render (always)
-    if (solverInit)
+    if (!solverInit)
+    {
+        mazeRenderMask<<<dg, db>>>(ptrMaskGM, w, h, tabPixelsGM);
+    }
+    else
     {
         mazeResetMaxAbs<<<1,1>>>(ptrMaxAbsGM);
         mazeComputeMaxAbsLabelWarp<<<dg, db>>>(ptrMaskGM, ptrLabelA, wh, ptrMaxAbsGM);
 
         mazeRenderLabelsHSB_PathAdaptive<<<dg, db>>>(ptrMaskGM, ptrLabelA, ptrPathMaskGM,
-                                                     ptrMaxAbsGM, w, h, tabPixelsGM);
-    }
-    else
-    {
-        // no solver yet -> show mask-like neutral rendering
-        mazeResetMaxAbs<<<1,1>>>(ptrMaxAbsGM); // harmless
-        mazeRenderLabelsHSB_PathAdaptive<<<dg, db>>>(ptrMaskGM, ptrLabelA, nullptr,
                                                      ptrMaxAbsGM, w, h, tabPixelsGM);
     }
 }

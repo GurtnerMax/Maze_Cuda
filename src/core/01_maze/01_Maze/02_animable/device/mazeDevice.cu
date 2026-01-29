@@ -329,7 +329,7 @@ __global__ void mazePropagateV8(const unsigned char* __restrict__ maskGM,
                 }
                 else if (cand == bestPosCand)
                     {
-                        // tie break : s best (3) si nouveau droit et ancien était diag
+                        // tie break : s best (3)
                         if (stepCostV8(k) < stepCostV8(bestPosK))
                         {
                             bestPosS = ns;
@@ -489,6 +489,25 @@ __global__ void mazeComputeMaxAbsLabelWarp(const unsigned char* __restrict__ mas
     // one atomic per warp
     if ((threadIdx.x & 31) == 0)
         atomicMax(maxAbsGM, local);
+}
+
+
+
+__global__ void mazeRenderMask(const unsigned char* __restrict__ maskGM,
+                               uint w, uint h,
+                               uchar4* __restrict__ dstGM)
+{
+    const int TID = Thread2D::tid();
+    const int NB  = Thread2D::nbThread();
+    const int WH  = (int)(w * h);
+
+    int s = TID;
+    while (s < WH)
+    {
+        const unsigned char c = maskGM[s] ? 255u : 0u;
+        dstGM[s] = make_uchar4(c, c, c, 255);
+        s += NB;
+    }
 }
 
 /*---------------- render adaptive palette + path ----------------*/
